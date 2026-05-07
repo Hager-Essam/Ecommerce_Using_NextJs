@@ -3,12 +3,24 @@
 import { useState, useEffect } from 'react';
 import { useCart } from '@/lib/cart-context';
 import { useRouter } from 'next/navigation';
-import { CreditCard, Truck, CheckCircle } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import { CreditCard, Truck, CheckCircle, Loader } from 'lucide-react';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements } from '@stripe/react-stripe-js';
+import StripeCheckoutForm from '@/components/StripeCheckoutForm';
+
+// Initialize Stripe
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '');
 
 export default function CheckoutPage() {
   const { items, totalPrice, clearCart } = useCart();
   const router = useRouter();
+  const { data: session } = useSession();
   const [step, setStep] = useState(1);
+  const [clientSecret, setClientSecret] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  
   const [formData, setFormData] = useState({
     // Shipping
     fullName: '',
@@ -19,12 +31,7 @@ export default function CheckoutPage() {
     state: '',
     zipCode: '',
     country: '',
-    // Payment
-    cardNumber: '',
-    cardName: '',
-    expiryDate: '',
-    cvv: '',
-    paymentMethod: 'card',
+    paymentMethod: 'stripe', // 'stripe' or 'cod'
   });
 
   // Redirect if cart is empty
@@ -39,7 +46,7 @@ export default function CheckoutPage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <Loader className="h-12 w-12 animate-spin text-blue-600 mx-auto" />
           <p className="mt-4 text-gray-600">Loading...</p>
         </div>
       </div>
@@ -51,16 +58,64 @@ export default function CheckoutPage() {
   const shipping = subtotal > 50 ? 0 : 10;
   const total = subtotal + tax + shipping;
 
-  const handleSubmit = (e) => {
+  const handleContinueToPayment = async (e) => {
     e.preventDefault();
-    if (step === 1) {
-      setStep(2);
+    
+    if (formData.paymentMethod === 'stripe') {
+      setLoading(true);
+      setError('');
+
+      try {
+        // Create payment intent
+        const response = await fetch('/api/create-payment-intent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: total,
+            currency: 'usd',
+            items: items.map(item => ({
+              productId: item.productId,
+              name: item.name,
+              price: item.price,
+              quantity: item.quantity,
+            })),
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to create payment intent');
+        }
+
+        setClientSecret(data.clientSecret);
+        setStep(2);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
     } else {
-      // Process order
-      alert('Order placed successfully!');
-      clearCart();
-      router.push('/');
+      // Cash on Delivery
+      setStep(2);
     }
+  };
+
+  const handlePlaceOrder = async () => {
+    // For COD, place order directly
+    alert('Order placed successfully! You will pay on delivery.');
+    clearCart();
+    router.push('/orders');
+  };
+
+  const handleStripeSuccess = (paymentIntent) => {
+    alert('Payment successful! Your order has been placed.');
+    clearCart();
+    router.push('/orders');
+  };
+
+  const handleStripeError = (error) => {
+    setError(error.message || 'Payment failed. Please try again.');
   };
 
   return (
@@ -87,17 +142,23 @@ export default function CheckoutPage() {
           </div>
         </div>
 
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg mb-6">
+            {error}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Form */}
           <div className="lg:col-span-2">
-            <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-sm p-6">
+            <div className="bg-white rounded-lg shadow-sm p-6">
               {step === 1 ? (
-                <>
+                <form onSubmit={handleContinueToPayment}>
                   <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                     <Truck className="h-6 w-6" />
                     Shipping Information
                   </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-gray-900 mb-2">
                         Full Name *
@@ -195,110 +256,85 @@ export default function CheckoutPage() {
                       />
                     </div>
                   </div>
-                </>
-              ) : (
-                <>
-                  <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                    <CreditCard className="h-6 w-6" />
-                    Payment Information
-                  </h2>
+
                   <div className="mb-6">
                     <label className="block text-sm font-medium text-gray-900 mb-2">
-                      Payment Method
+                      Payment Method *
                     </label>
                     <div className="grid grid-cols-2 gap-4">
                       <button
                         type="button"
-                        onClick={() => setFormData({ ...formData, paymentMethod: 'card' })}
-                        className={`p-4 border-2 rounded-lg font-semibold ${formData.paymentMethod === 'card' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-gray-300 text-gray-900'}`}
+                        onClick={() => setFormData({ ...formData, paymentMethod: 'stripe' })}
+                        className={`p-4 border-2 rounded-lg font-semibold transition ${formData.paymentMethod === 'stripe' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-gray-300 text-gray-900 hover:border-gray-400'}`}
                       >
-                        Credit Card
+                        💳 Credit Card (Stripe)
                       </button>
                       <button
                         type="button"
                         onClick={() => setFormData({ ...formData, paymentMethod: 'cod' })}
-                        className={`p-4 border-2 rounded-lg font-semibold ${formData.paymentMethod === 'cod' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-gray-300 text-gray-900'}`}
+                        className={`p-4 border-2 rounded-lg font-semibold transition ${formData.paymentMethod === 'cod' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-gray-300 text-gray-900 hover:border-gray-400'}`}
                       >
-                        Cash on Delivery
+                        💵 Cash on Delivery
                       </button>
                     </div>
                   </div>
-                  {formData.paymentMethod === 'card' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-900 mb-2">
-                          Card Number *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="1234 5678 9012 3456"
-                          value={formData.cardNumber}
-                          onChange={(e) => setFormData({ ...formData, cardNumber: e.target.value })}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder-gray-400"
-                        />
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader className="h-5 w-5 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      'Continue to Payment'
+                    )}
+                  </button>
+                </form>
+              ) : (
+                <>
+                  <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+                    <CreditCard className="h-6 w-6" />
+                    Payment
+                  </h2>
+
+                  {formData.paymentMethod === 'stripe' && clientSecret ? (
+                    <Elements stripe={stripePromise} options={{ clientSecret }}>
+                      <StripeCheckoutForm
+                        amount={total}
+                        onSuccess={handleStripeSuccess}
+                        onError={handleStripeError}
+                      />
+                    </Elements>
+                  ) : formData.paymentMethod === 'cod' ? (
+                    <div className="space-y-6">
+                      <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
+                        <p className="text-yellow-800 font-semibold mb-2">Cash on Delivery</p>
+                        <p className="text-yellow-700 text-sm">
+                          You will pay ${total.toFixed(2)} when your order is delivered.
+                        </p>
                       </div>
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-900 mb-2">
-                          Cardholder Name *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={formData.cardName}
-                          onChange={(e) => setFormData({ ...formData, cardName: e.target.value })}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-900 mb-2">
-                          Expiry Date *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="MM/YY"
-                          value={formData.expiryDate}
-                          onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder-gray-400"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-900 mb-2">
-                          CVV *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="123"
-                          value={formData.cvv}
-                          onChange={(e) => setFormData({ ...formData, cvv: e.target.value })}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder-gray-400"
-                        />
-                      </div>
+                      <button
+                        onClick={handlePlaceOrder}
+                        className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition"
+                      >
+                        Place Order
+                      </button>
                     </div>
-                  )}
+                  ) : null}
+
+                  <button
+                    onClick={() => setStep(1)}
+                    className="w-full mt-4 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
+                  >
+                    Back to Shipping
+                  </button>
                 </>
               )}
-
-              <div className="flex gap-4 mt-6">
-                {step === 2 && (
-                  <button
-                    type="button"
-                    onClick={() => setStep(1)}
-                    className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
-                  >
-                    Back
-                  </button>
-                )}
-                <button
-                  type="submit"
-                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition"
-                >
-                  {step === 1 ? 'Continue to Payment' : 'Place Order'}
-                </button>
-              </div>
-            </form>
+            </div>
           </div>
 
           {/* Order Summary */}
@@ -308,7 +344,7 @@ export default function CheckoutPage() {
               <div className="space-y-4 mb-6">
                 {items.map((item) => (
                   <div key={item.productId} className="flex gap-3">
-                    <img src={item.image} alt={item.name} className="w-16 h-16 object-cover rounded" />
+                    <img src={item.image} alt={item.name} className="w-full h-16 object-cover rounded" />
                     <div className="flex-1">
                       <p className="font-semibold text-sm">{item.name}</p>
                       <p className="text-sm text-gray-600">Qty: {item.quantity}</p>

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ShoppingCart, Heart, Star, Truck, Shield, RotateCcw } from 'lucide-react';
 import { useCart } from '@/lib/cart-context';
+import { useWishlist } from '@/lib/wishlist-context';
 
 // Sample product data - would normally fetch from API based on slug
 const getProductBySlug = (slug) => {
@@ -48,10 +49,12 @@ export default function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { addItem } = useCart();
+  const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
   const product = getProductBySlug(params.slug);
   
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
+  const inWishlist = isInWishlist(product.id);
 
   const handleAddToCart = () => {
     addItem({
@@ -67,6 +70,22 @@ export default function ProductDetailPage() {
   const handleBuyNow = () => {
     handleAddToCart();
     router.push('/cart');
+  };
+
+  const handleWishlistToggle = () => {
+    if (inWishlist) {
+      removeFromWishlist(product.id);
+    } else {
+      addToWishlist({
+        id: product.id,
+        name: product.name,
+        slug: product.slug,
+        price: product.price,
+        compareAtPrice: product.compareAtPrice,
+        image: product.images[0],
+        inStock: product.stock > 0,
+      });
+    }
   };
 
   return (
@@ -195,8 +214,19 @@ export default function ProductDetailPage() {
                 >
                   Buy Now
                 </button>
-                <button className="w-12 h-12 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center">
-                  <Heart className="h-6 w-6 text-gray-600" />
+                <button
+                  onClick={handleWishlistToggle}
+                  className={`w-12 h-12 border rounded-lg flex items-center justify-center transition ${
+                    inWishlist
+                      ? 'bg-red-50 border-red-300 hover:bg-red-100'
+                      : 'border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <Heart
+                    className={`h-6 w-6 ${
+                      inWishlist ? 'text-red-500 fill-red-500' : 'text-gray-600'
+                    }`}
+                  />
                 </button>
               </div>
 

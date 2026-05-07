@@ -5,10 +5,12 @@ import { useSession, signOut } from 'next-auth/react';
 import { ShoppingCart, User, Search, Menu, Heart } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useCart } from '@/lib/cart-context';
+import { useWishlist } from '@/lib/wishlist-context';
 
 export function Navbar() {
   const { data: session } = useSession();
   const { totalItems } = useCart();
+  const { wishlistCount } = useWishlist();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef(null);
@@ -66,8 +68,13 @@ export function Navbar() {
 
             {session ? (
               <>
-                <Link href="/wishlist" className="text-gray-700 hover:text-blue-600">
+                <Link href="/wishlist" className="text-gray-700 hover:text-blue-600 relative">
                   <Heart className="h-6 w-6" />
+                  {wishlistCount > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                      {wishlistCount}
+                    </span>
+                  )}
                 </Link>
                 <Link href="/cart" className="text-gray-700 hover:text-blue-600 relative">
                   <ShoppingCart className="h-6 w-6" />
@@ -176,14 +183,17 @@ export function Navbar() {
               </Link>
               {session ? (
                 <>
+                  <Link href="/wishlist" className="text-gray-700 hover:text-blue-600">
+                    Wishlist
+                  </Link>
+                  <Link href="/cart" className="text-gray-700 hover:text-blue-600">
+                    Cart
+                  </Link>
                   <Link href="/profile" className="text-gray-700 hover:text-blue-600">
                     Profile
                   </Link>
                   <Link href="/orders" className="text-gray-700 hover:text-blue-600">
                     Orders
-                  </Link>
-                  <Link href="/cart" className="text-gray-700 hover:text-blue-600">
-                    Cart
                   </Link>
                   <button
                     onClick={() => signOut()}

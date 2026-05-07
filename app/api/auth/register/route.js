@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
 import { z } from 'zod';
+import crypto from 'crypto';
+import { sendVerificationEmail } from '@/lib/email';
 
 const registerSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -41,16 +43,33 @@ export async function POST(req) {
     }
 
     // Create new user
-    const user = await User.create(validatedData);
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    
+    const user = await User.create({
+      ...validatedData,
+      verificationToken,
+      verificationTokenExpiry,
+      isEmailVerified: false,
+    });
+
+    // Send verification email
+    try {
+      await sendVerificationEmail(user.email, user.name, verificationToken);
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      // Continue even if email fails - user is created
+    }
 
     return NextResponse.json(
       {
-        message: 'User registered successfully. Please check your email for verification.',
+        message: 'Registration successful! Please check your email to verify your account.',
         user: {
           id: user._id,
           name: user.name,
           email: user.email,
           role: user.role,
+          emailVerified: user.isEmailVerified,
         },
       },
       { status: 201 }

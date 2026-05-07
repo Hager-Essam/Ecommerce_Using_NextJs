@@ -2,29 +2,28 @@
 
 import Link from 'next/link';
 import { Heart, ShoppingCart, Trash2 } from 'lucide-react';
-
-// Sample wishlist data
-const wishlistItems = [
-  {
-    id: '1',
-    name: 'Wireless Headphones',
-    slug: 'wireless-headphones',
-    price: 99.99,
-    compareAtPrice: 149.99,
-    image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop',
-    inStock: true,
-  },
-  {
-    id: '2',
-    name: 'Smart Watch',
-    slug: 'smart-watch',
-    price: 199.99,
-    image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&h=400&fit=crop',
-    inStock: true,
-  },
-];
+import { useWishlist } from '@/lib/wishlist-context';
+import { useCart } from '@/lib/cart-context';
 
 export default function WishlistPage() {
+  const { wishlist, removeFromWishlist, wishlistCount } = useWishlist();
+  const { addItem } = useCart();
+
+  const handleAddToCart = (item) => {
+    addItem({
+      productId: item.id,
+      name: item.name,
+      price: item.price,
+      quantity: 1,
+      image: item.image,
+    });
+    alert('Added to cart!');
+  };
+
+  const handleRemove = (productId) => {
+    removeFromWishlist(productId);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -33,10 +32,10 @@ export default function WishlistPage() {
             <Heart className="h-8 w-8 text-red-500 fill-red-500" />
             My Wishlist
           </h1>
-          <p className="text-gray-600">{wishlistItems.length} items</p>
+          <p className="text-gray-600">{wishlistCount} items</p>
         </div>
 
-        {wishlistItems.length === 0 ? (
+        {wishlistCount === 0 ? (
           <div className="text-center py-16">
             <Heart className="h-24 w-24 text-gray-300 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Your wishlist is empty</h2>
@@ -50,7 +49,7 @@ export default function WishlistPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {wishlistItems.map((item) => (
+            {wishlist.map((item) => (
               <div key={item.id} className="bg-white rounded-lg shadow-sm hover:shadow-md transition group">
                 <div className="relative">
                   <Link href={`/products/${item.slug}`}>
@@ -67,7 +66,10 @@ export default function WishlistPage() {
                       )}
                     </div>
                   </Link>
-                  <button className="absolute top-2 left-2 bg-white p-2 rounded-full shadow-md hover:bg-gray-100 transition">
+                  <button
+                    onClick={() => handleRemove(item.id)}
+                    className="absolute top-2 left-2 bg-white p-2 rounded-full shadow-md hover:bg-gray-100 transition"
+                  >
                     <Trash2 className="h-5 w-5 text-red-500" />
                   </button>
                 </div>
@@ -88,7 +90,10 @@ export default function WishlistPage() {
                     )}
                   </div>
                   {item.inStock ? (
-                    <button className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2">
+                    <button
+                      onClick={() => handleAddToCart(item)}
+                      className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2"
+                    >
                       <ShoppingCart className="h-5 w-5" />
                       Add to Cart
                     </button>
